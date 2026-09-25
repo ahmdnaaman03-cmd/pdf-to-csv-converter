@@ -1,37 +1,26 @@
 import customtkinter as ctk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
+import os
+from core.engine import extract_invoice_data
 
-# إعدادات المظهر
 ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
-
-class InvoiceConverterApp(ctk.CTk):
+class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        
-        # إعدادات النافذة
-        self.title("PDF to Excel - MVP")
         self.geometry("400x250")
-        
-        # زر الرفع الوحيد
-        self.upload_btn = ctk.CTkButton(
-            self, 
-            text="Upload File", 
-            command=self.upload_file,
-            width=200, 
-            height=50,
-            font=("Arial", 16, "bold")
-        )
-        self.upload_btn.place(relx=0.5, rely=0.5, anchor="center")
-        
-    def upload_file(self):
-        file_path = filedialog.askopenfilename(
-            title="Select PDF Invoice",
-            filetypes=[("PDF Files", "*.pdf")]
-        )
-        if file_path:
-            print(f"File selected: {file_path}")
+        self.btn = ctk.CTkButton(self, text="Upload Invoice", command=self.upload)
+        self.btn.place(relx=0.5, rely=0.5, anchor="center")
+
+    def upload(self):
+        path = filedialog.askopenfilename(filetypes=[("PDF", "*.pdf")])
+        if path:
+            os.makedirs("data/output", exist_ok=True)
+            out = "data/output/result.xlsx"
+            try:
+                extract_invoice_data(path, out)
+                messagebox.showinfo("Success", "Excel created successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
 
 if __name__ == "__main__":
-    app = InvoiceConverterApp()
-    app.mainloop()
+    App().mainloop()
