@@ -1,12 +1,18 @@
 import pypdf
 import pandas as pd
-import re
+import google.generativeai as genai
+import json
 import os
+from dotenv import load_dotenv
 
-def extract_invoice_data(pdf_path, output_excel_path):
-    if not os.path.exists(pdf_path):
-        return f"Error: File {pdf_path} not found."
+load_dotenv()
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise ValueError("API Key is missing. Please set GEMINI_API_KEY in .env file.")
 
+genai.configure(api_key=api_key)
+
+def extract_invoice_data(pdf_path, excel_path):
     text = ""
     with open(pdf_path, "rb") as f:
         reader = pypdf.PdfReader(f)
@@ -14,19 +20,34 @@ def extract_invoice_data(pdf_path, output_excel_path):
             extracted = page.extract_text()
             if extracted:
                 text += extracted + "\n"
+    
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    prompt = f"""
+    اقرأ الفاتورة التالية واستخرج منها البيانات المطلوبة بدقة بغض النظر عن لغة الفاتورة أو التنسيق.
+    يجب أن يكون الرد عبارة عن كائن JSON صحيح فقط (Valid JSON) يحتوي على المفاتيح التالية:
+    - "Invoice Number"
+    - "Date"
+    - "Total"
+    إذا لم تجد قيمة معينة، اكتب "غير متوفر".
+    لا تكتب أي نصوص أخرى خارج الـ JSON.
+    
+    نص الفاتورة:
+    {text}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        res_text = response.text.replace('```json', '').replace('```', '').strip()
+        data = json.loads(res_text)
+        invoice_no = data.get("Invoice Number", "غير متوفر")
+        date_val = data.get("Date", "غير متوفر")
+        total_val = data.get("Total", "غير متوفر")
+    except Exception as e:
+        invoice_no, date_val, total_val = "خطأ في القراءة", "خطأ في القراءة", "خطأ في القراءة"
 
-    # التعبيرات النمطية لصيد البيانات الأساسية
-    invoice_no = re.search(r"(?:Invoice\s*No|Invoice\s*Number|رقم\s*الفاتورة)[\s:\-]*([A-Za-z0-9\-]+)", text, re.IGNORECASE)
-    total = re.search(r"(?:Total|الإجمالي|المبلغ)[\s:\-]*([0-9.,]+)", text, re.IGNORECASE)
-    date = re.search(r"(?:Date|التاريخ)[\s:\-]*([0-9/.\-]+)", text, re.IGNORECASE)
-
-    data = {
-        "رقم الفاتورة": [invoice_no.group(1) if invoice_no else "غير متوفر"],
-        "التاريخ": [date.group(1) if date else "غير متوفر"],
-        "الإجمالي": [total.group(1) if total else "غير متوفر"]
-    }
-
-    # حفظ البيانات في ملف إكسيل
-    df = pd.DataFrame(data)
-    df.to_excel(output_excel_path, index=False)
-    return f"Success: Saved to {output_excel_path}"
+    df = pd.DataFrame([{
+        "رقم الفاتورة": invoice_no,
+        "التاريخ": date_val,
+        "الإجمالي": total_val
+    }])
+    df.to_excel(excel_path, index=False)
